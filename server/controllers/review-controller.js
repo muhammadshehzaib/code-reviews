@@ -1,10 +1,10 @@
 // controllers/review-controller.js
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { PromptTemplate } from "@langchain/core/prompts";
 import { StringOutputParser } from "@langchain/core/output_parsers";
+import { HuggingFaceInference } from "@langchain/community/llms/hf";
 import Review from '../models/Review.js';
 
-// Few-shot examples to reduce hallucinations
+// Your existing prompt template remains the same
 const promptTemplate = PromptTemplate.fromTemplate(`
 You are an expert code reviewer. Analyze the following code for bugs, security issues, and best practices.
 
@@ -29,26 +29,28 @@ Provide:
 Format your response as JSON with keys: score, issues, suggestions, refactoredCode
 `);
 
-// Initialize model lazily (only when needed)
-let model = null;
 let chain = null;
 
 const getChain = () => {
   if (!chain) {
-    console.log('🔑 API Key loaded:', process.env.GOOGLE_API_KEY ? 'YES ✅' : 'NO ❌');
-    
-    model = new ChatGoogleGenerativeAI({
-      model: "gemini-2.5-flash",
-      apiKey: process.env.GOOGLE_API_KEY,
+    console.log('🔑 Hugging Face API Key loaded:', process.env.HUGGINGFACEHUB_API_KEY ? 'YES ✅' : 'NO ❌');
+
+    // Initialize Hugging Face model
+    const model = new HuggingFaceInference({
+      model: "gpt2", // Free code model
+      apiKey: process.env.HUGGINGFACEHUB_API_KEY, // Your HF token
       temperature: 0.3,
+      maxTokens: 1000,
+
     });
-    
+
     const outputParser = new StringOutputParser();
     chain = promptTemplate.pipe(model).pipe(outputParser);
   }
   return chain;
 };
 
+// Your existing reviewCode and getReviewHistory functions remain the same
 export const reviewCode = async (req, res) => {
   try {
     const { code, language = 'javascript' } = req.body;
@@ -57,10 +59,7 @@ export const reviewCode = async (req, res) => {
       return res.status(400).json({ error: 'Code is required' });
     }
 
-    // Get chain (initializes model on first call)
     const reviewChain = getChain();
-
-    // Call LangChain with Gemini using LCEL
     const result = await reviewChain.invoke({
       code: code,
       language: language
@@ -69,10 +68,8 @@ export const reviewCode = async (req, res) => {
     // Parse AI response
     let reviewData;
     try {
-      // Try to parse as JSON
       reviewData = JSON.parse(result);
     } catch {
-      // If not JSON, use raw text
       reviewData = {
         score: 7,
         issues: ['Check the detailed review below'],
